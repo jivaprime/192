@@ -1,0 +1,195 @@
+import matplotlib.pyplot as plt
+import sys
+import numpy as np
+import time
+
+# -----------------------------------------------------------------------------
+# Extreme Lychrel Test for 196
+#
+# - Start from 196 and repeatedly apply "reverse-and-add"
+# - At regular intervals, measure how asymmetric the digits are using SDI
+# - Visualize the evolution of this "asymmetry density" over many steps
+#
+# This script is meant as an experimental probe, not a mathematical proof.
+# -----------------------------------------------------------------------------
+
+# Python 3.11+ has a safety limit on the number of digits when converting
+# huge integers to strings (default ~4300 digits).
+# For Lychrel-type experiments the numbers quickly exceed this,
+# so we disable that limit explicitly.
+sys.set_int_max_str_digits(0)
+
+
+def get_digits(n):
+    """
+    Return the decimal digits of n as a list of integers.
+    (Not used in the main loop, kept for possible experiments.)
+    """
+    return [int(d) for d in str(n)]
+
+
+def calculate_sdi_fast(n):
+    """
+    Compute a simple "asymmetry score" (SDI) for an integer n.
+
+    Idea:
+      - Look at the left half and the right half of the decimal digits.
+      - Reverse the right half so that each pair (left[i], right[i])
+        corresponds to two digits facing each other around the center.
+      - For each pair, compare them modulo 2 and modulo 5:
+            score_pair = |(dl mod 2) - (dr mod 2)| +
+                         |(dl mod 5) - (dr mod 5)|
+        where dl, dr are the two digits.
+      - Sum score_pair over all pairs to get SDI.
+      - Later we divide by the number of pairs to get a "per-pair" average.
+
+    Interpretation (very rough):
+      - Lower SDI / pairs  → left & right halves behave more similarly
+                             (more symmetric / more structured).
+      - Higher SDI / pairs → left & right halves behave more differently
+                             (more asymmetric / closer to random).
+
+    Returns
+    -------
+    sdi_score : int
+        Total SDI over all digit pairs.
+    pairs : int
+        Number of digit pairs actually compared.
+    """
+    s_n = str(n)
+    length = len(s_n)
+    pairs = length // 2
+
+    if pairs == 0:
+        return 0, 0
+
+    # Take the first half as-is,
+    # and the last 'pairs' digits reversed (to face the left half).
+    left_part = s_n[:pairs]
+    right_part = s_n[-pairs:][::-1]
+
+    sdi_score = 0
+
+    # We could vectorize this, but for the digit sizes we reach here
+    # a plain Python loop is simple and fast enough.
+    for l, r in zip(left_part, right_part):
+        dl, dr = int(l), int(r)
+        diff_mod2 = abs((dl % 2) - (dr % 2))
+        diff_mod5 = abs((dl % 5) - (dr % 5))
+        sdi_score += (diff_mod2 + diff_mod5)
+
+    return sdi_score, pairs
+
+
+def extreme_lychrel_test(start_num, max_steps=50000, sample_rate=50):
+    """
+    Run an "extreme" Lychrel-style experiment on a starting number.
+
+    Parameters
+    ----------
+    start_num : int
+        Initial value (196 for the classical Lychrel candidate).
+    max_steps : int, optional
+        Maximum number of reverse-and-add iterations.
+    sample_rate : int, optional
+        Compute SDI only every `sample_rate` steps to save time.
+
+    Process
+    -------
+    For step = 0 .. max_steps - 1:
+        1. If step is a multiple of sample_rate:
+             - Compute SDI(start_num) and store the normalized value
+               (sdi / pairs) along with the current step.
+        2. Apply the Lychrel operation:
+             current_num := current_num + reverse_digits(current_num)
+        3. If a palindrome ever appears, stop early (just in case).
+
+    At the end, plot:
+        - Normalized SDI over steps
+        - A linear trend line for SDI
+        - Two reference lines:
+            * ~2.1 : heuristic "random noise" level
+            * ~1.6 : "zombie line" (informal threshold used in this experiment)
+    """
+    print(f"🚀 {start_num}의 극한 테스트 시작 (목표: {max_steps} Steps)")
+    print("연산 중... (숫자가 커질수록 속도가 느려집니다)")
+
+    current_num = start_num
+    norm_sdi_history = []
+    steps_history = []
+
+    start_time = time.time()
+
+    for step in range(max_steps):
+        # Measure SDI only every `sample_rate` steps
+        # to reduce the overhead of huge-int -> string conversions.
+        if step % sample_rate == 0:
+            sdi, pairs = calculate_sdi_fast(current_num)
+            if pairs > 0:
+                norm_sdi_history.append(sdi / pairs)
+                steps_history.append(step)
+
+            # Simple progress log every 5000 steps
+            if step % 5000 == 0 and step > 0:
+                elapsed = time.time() - start_time
+                digit_len = len(str(current_num))
+                print(f"Step {step}: 자릿수 {digit_len}개 돌파... ({elapsed:.1f}초 경과)")
+
+        # --- Lychrel operation: reverse-and-add in base 10 ---
+        # Python's string slicing s[::-1] is implemented in C and is very fast.
+        s_num = str(current_num)
+        rev_num = int(s_num[::-1])
+        current_num += rev_num
+
+        # If we ever hit a palindrome, we stop.
+        # (For 196 this is not expected, but we keep the check for completeness.)
+        if s_num == s_num[::-1]:
+            print(f"기적 발생! Step {step}에서 대칭수 발견!")
+            break
+
+    total_time = time.time() - start_time
+    print(f"✅ 완료! 총 소요시간: {total_time:.2f}초")
+    print(f"최종 숫자 길이: {len(str(current_num))} 자릿수")
+
+    # ---------------------- Visualization ----------------------
+    plt.figure(figsize=(14, 7))
+
+    # Main SDI curve
+    plt.plot(
+        steps_history,
+        norm_sdi_history,
+        color='#ff7f0e',
+        alpha=0.6,
+        linewidth=1,
+        label='Num 196 (Normalized SDI)'
+    )
+
+    # Linear trend line (1st-order polynomial fit)
+    z = np.polyfit(steps_history, norm_sdi_history, 1)
+    p = np.poly1d(z)
+    plt.plot(
+        steps_history,
+        p(steps_history),
+        "r--",
+        linewidth=2,
+        label=f"Trend Slope: {z[0]:.7f}"
+    )
+
+    # Reference lines:
+    #  - 2.1 : heuristic level for theoretical randomness
+    #  - 1.6 : "zombie line" used as an empirical threshold in this project
+    plt.axhline(y=2.1, color='gray', linestyle=':', label='Random Noise (~2.1)', alpha=0.7)
+    plt.axhline(y=1.6, color='blue', linestyle='--', label='The Zombie Line (~1.6)', alpha=0.7)
+
+    plt.title(f"Extreme Lychrel Test : 196 up to {max_steps} Steps")
+    plt.xlabel("Steps")
+    plt.ylabel("Asymmetry Density (Normalized SDI)")
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.show()
+
+
+# Example run
+if __name__ == "__main__":
+    extreme_lychrel_test(196, max_steps=50000, sample_rate=100)
