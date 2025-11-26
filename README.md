@@ -1,5 +1,5 @@
-# 192
-192, SDI(Symmetry Defect Index)
+# 196
+196, SDI(Symmetry Defect Index)
 
 ## Probing 196 with an “Asymmetry Density” Metric (SDI)
 
